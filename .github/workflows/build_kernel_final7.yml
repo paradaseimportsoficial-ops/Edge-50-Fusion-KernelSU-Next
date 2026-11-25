@@ -88,7 +88,9 @@ jobs:
         run: |
           set -euo pipefail
           cd android-kernel
-          BUILD_CONFIG=common/build.config.gki.aarch64 LOCALVERSION=-tecnico-root-v1 ./build/build.sh 2>&1 | tee ../output/build.log
+          free -h | tee ../output/resources-before.txt
+          # ThinLTO e suportado pelo build.sh oficial e preserva o suporte a CFI.
+          BUILD_CONFIG=common/build.config.gki.aarch64 LOCALVERSION=-tecnico-root-v1 LTO=thin ./build/build.sh -j2 2>&1 | tee ../output/build.log
 
       - name: Validar configuracao e reempacotar o boot novo
         run: |
@@ -96,6 +98,9 @@ jobs:
           CONFIG_FILE=$(find android-kernel/out -path '*/common/.config' -type f -print -quit)
           test -n "$CONFIG_FILE"
           grep -qx 'CONFIG_KSU=y' "$CONFIG_FILE"
+          grep -qx 'CONFIG_LTO_CLANG_THIN=y' "$CONFIG_FILE"
+          grep -qx 'CONFIG_CFI_CLANG=y' "$CONFIG_FILE"
+          grep -qx 'CONFIG_SECURITY_SELINUX=y' "$CONFIG_FILE"
           grep -qx '# CONFIG_KSU_DEBUG is not set' "$CONFIG_FILE"
           cp "$CONFIG_FILE" output/kernel.config
           COMPILED_IMAGE=$(find android-kernel/out -path '*/common/arch/arm64/boot/Image' -type f -print -quit)
@@ -136,6 +141,7 @@ jobs:
           (root / 'BUILD-INFO.txt').write_text('\n'.join([
               'Compilacao nova do kernel inteiro no GitHub Actions; sem reutilizar kernel de artefato anterior.',
               'Dispositivo: Motorola Edge 50 Fusion (CUSCO)',
+              'Compilacao com ThinLTO e make -j2 para reduzir consumo de recursos; CFI e SELinux conferidos na configuracao.',
               'ROM de destino informada pelo usuario: ' + os.environ['TARGET_BUILD'],
               'KernelSU Next: v3.4.2, Built-in; commit ' + os.environ['KSU_COMMIT'],
               banner,
