@@ -9,8 +9,9 @@ Projeto de compilação GKI 5.10 com KernelSU Next Built-in e reempacotamento do
 - Dispositivo: **Motorola Edge 50 Fusion (CUSCO)**.
 - Firmware de destino informado pelo proprietário: **W1UUS36H.21-14-4-1-7**.
 - [Workflow para compilar o kernel inteiro do zero](.github/workflows/build_kernel_final7.yml).
-- [Execução e arquivos produzidos](https://github.com/paradaseimportsoficial-ops/Edge-50-Fusion-KernelSU-Next/actions/runs/45702752721).
+- [Execução e arquivos produzidos](https://github.com/paradaseimportsoficial-ops/Edge-50-Fusion-KernelSU-Next/actions/runs/45712445884).
 - KernelSU Next estável **v3.4.2**, fixado no commit `4c706b5938665866ebe16944a481a7b91e3396af`.
+- Compilação com **ThinLTO** e dois processos (`-j2`) para reduzir consumo de recursos; a saída exige CFI e SELinux habilitados na configuração.
 - Perfil de compilação: `common/build.config.gki.aarch64`; nome local `-tecnico-root-v1`.
 - Os fontes são baixados em um ambiente limpo e o kernel é compilado nessa execução, sem reutilizar kernel de artefato anterior.
 
