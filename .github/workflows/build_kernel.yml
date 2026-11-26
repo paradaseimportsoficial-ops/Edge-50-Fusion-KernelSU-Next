@@ -23,7 +23,6 @@ jobs:
       - name: Integrar KernelSU Next no código-fonte
         run: |
           cd android-kernel
-          # Procura a pasta comum ou o diretório principal para injetar o KernelSU Next
           if [ -d "common" ]; then
               cd common
           fi
@@ -42,43 +41,41 @@ jobs:
       - name: Configurar Versão e Compilar o Kernel com KernelSU Next
         run: |
           cd android-kernel
+          rm -rf out
           touch .scmversion
-          
-          # Configura defconfig para o MediaTek
+
           make O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- defconfig || true
-          
+
           if [ -f "out/.config" ]; then
               scripts/config --file out/.config --set-str CONFIG_LOCALVERSION "-tecnico-root-v1"
               make O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
           fi
 
-          # Compilação da imagem
           export HOSTCFLAGS="-Wno-error=strict-prototypes -Wno-error=implicit-int -Wno-error=implicit-function-declaration -Wno-error=return-type"
-          make -j$(nproc --all) O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- KCFLAGS="-w" WERROR=0 Image.gz-dtb || make -j$(nproc --all) O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- KCFLAGS="-w" WERROR=0 Image.gz
+          make -k -j$(nproc --all) O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- KCFLAGS="-w" WERROR=0 Image.gz-dtb 2>&1 | tee build.log || \
+          make -k -j$(nproc --all) O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- KCFLAGS="-w" WERROR=0 Image.gz 2>&1 | tee -a build.log
+
+          echo "=== RESUMO DE ERROS NO BUILD.LOG ==="
+          grep -nE "error:|Error [0-9]|FAILED" build.log | head -n 30 || true
 
       - name: Processar e Reempacotar com Boot.img Original
         run: |
           mkdir -p work
           cd work
 
-          # 1. Baixar o boot.img oficial correspondente (substitua o ID se necessário)
           FILE_ID="1EmqBaLng6Cxho91VAA9oLRAlc_J9YkHz"
           gdown "https://drive.google.com/uc?id=${FILE_ID}" -O boot_stock.img
 
-          # 2. Baixar magiskboot para manipulação da imagem
           curl -L -o magiskboot https://github.com/vvb2060/magiskboot_for_ndk/releases/download/v26.1/magiskboot
           chmod +x magiskboot
 
-          # 3. Desempacotar o boot original
           ./magiskboot unpack boot_stock.img
 
-          # 4. Localizar a imagem compilada do kernel
           COMPILED_IMAGE=$(find ../android-kernel/out -name "Image.gz-dtb" -o -name "Image.gz" -o -name "Image" | head -n 1)
           echo "Kernel compilado encontrado em: $COMPILED_IMAGE"
 
           cp "$COMPILED_IMAGE" kernel
 
-          # 5. Reempacotar o boot.img final com o KernelSU Next embutido
           ./magiskboot repack boot_stock.img boot_finished.img
           cp boot_finished.img ../boot_finished.img
           cd ..
