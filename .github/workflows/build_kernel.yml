@@ -1,34 +1,31 @@
-name: Compilar KernelSU Next para Moto Edge 50 Fusion
+name: Build KernelSU Next do Zero para Moto Edge 50 Fusion (CUSCO)
 
 on:
   workflow_dispatch:
 
 jobs:
-  build-kernelsu:
+  build-kernel:
     runs-on: ubuntu-latest
     steps:
       - name: Baixar o código do repositório
         uses: actions/checkout@v4
 
-      - name: Configurar ambiente e dependências
+      - name: Configurar ambiente e repositório Android Kernel
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential bc bison flex libssl-dev libelf-dev python3-pip lz4 pigz git ccache libncurses5-dev lld clang gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi curl cpio unzip file
+          sudo apt-get install -y repo ccache bison libssl-dev libelf-dev python3-pip lz4 pigz file unzip curl
           pip3 install gdown
-
-      - name: Baixar Fonte do Kernel Qualcomm Snapdragon da Motorola
-        run: |
-          git clone https://github.com/MotorolaMobilityLLC/kernel-msm.git --depth=1 android-kernel
+          mkdir -p android-kernel
+          cd android-kernel
+          repo init -u https://android.googlesource.com/kernel/manifest -b common-android12-5.10 --depth=1
+          repo sync -c -j$(nproc --all) --no-tags --no-clone-bundle
 
       - name: Integrar KernelSU Next no código-fonte
         run: |
-          cd android-kernel
-          if [ -d "common" ]; then
-              cd common
-          fi
+          cd android-kernel/common
           curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -
 
-      - name: Configurar Swap de 12GB para estabilidade
+      - name: Configurar Swap de 12GB para evitar falta de memória
         run: |
           sudo swapoff /swapfile || true
           sudo rm -f /swapfile
@@ -38,44 +35,13 @@ jobs:
           sudo swapon /swapfile
           free -h
 
-      - name: Configurar Versão e Compilar o Kernel com KernelSU Next
+      - name: Compilar Kernel do Zero (GKI 5.10)
         run: |
           cd android-kernel
-          rm -rf out
-          touch .scmversion
+          touch common/.scmversion
+          BUILD_CONFIG=common/build.config.gki.aarch64 LOCALVERSION=-tecnico-root-v1 ./build/build.sh
 
-          DEFCONFIG_FOUND=$(find arch/arm64/configs -maxdepth 2 -type f \( -iname "*sm7435*" -o -iname "*cusco*" -o -iname "*moto*" -o -iname "*vendor*" \) | head -n 1)
-          if [ -n "$DEFCONFIG_FOUND" ]; then
-              DEFCONFIG_NAME=$(basename "$DEFCONFIG_FOUND")
-              echo "Usando defconfig: $DEFCONFIG_NAME"
-              make O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- "$DEFCONFIG_NAME" || true
-          else
-              make O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- defconfig || true
-          fi
-
-          if [ -f "out/.config" ]; then
-              scripts/config --file out/.config --set-str CONFIG_LOCALVERSION "-tecnico-root-v1"
-              scripts/config --file out/.config --disable CONFIG_PINCTRL_MT8183
-              scripts/config --file out/.config --disable CONFIG_PINCTRL_MT8192
-              scripts/config --file out/.config --disable CONFIG_PINCTRL_MT8516
-              scripts/config --file out/.config --disable CONFIG_POWER_RESET_MSM
-              make O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
-              scripts/config --file out/.config --disable CONFIG_POWER_RESET_MSM
-          fi
-
-          export HOSTCFLAGS="-Wno-error=strict-prototypes -Wno-error=implicit-int -Wno-error=implicit-function-declaration -Wno-error=return-type"
-          make -j$(nproc --all) O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- KCFLAGS="-w" WERROR=0 Image.gz-dtb || \
-          make -j$(nproc --all) O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- KCFLAGS="-w" WERROR=0 Image.gz || \
-          make -j$(nproc --all) O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- KCFLAGS="-w" WERROR=0 Image
-
-          COMPILED_IMAGE=$(find out -type f \( -name "Image.gz-dtb" -o -name "Image.gz" -o -name "Image" \) | head -n 1)
-          if [ -z "$COMPILED_IMAGE" ] || [ ! -s "$COMPILED_IMAGE" ]; then
-              echo "ERRO: Nenhuma imagem compilada valida foi gerada."
-              exit 1
-          fi
-          echo "Imagem compilada valida: $COMPILED_IMAGE ($(stat -c%s "$COMPILED_IMAGE") bytes)"
-
-      - name: Processar e Reempacotar com Boot.img Original
+      - name: Processar e Reempacotar com Magiskboot
         run: |
           mkdir -p work
           cd work
@@ -86,36 +52,42 @@ jobs:
               echo "ERRO: boot_stock.img nao foi baixado ou esta vazio."
               exit 1
           fi
-          ls -lh boot_stock.img
 
-          MAGISK_APK_URL=$(curl -s https://api.github.com/repos/topjohnwu/Magisk/releases/latest | grep "browser_download_url" | grep "\.apk" | cut -d '"' -f 4 | head -n 1)
-          echo "Baixando Magisk APK: $MAGISK_APK_URL"
-          curl -fSL -o magisk.apk "$MAGISK_APK_URL"
-          unzip -j -o magisk.apk "lib/x86_64/libmagiskboot.so" -d .
-          mv libmagiskboot.so magiskboot
+          curl -L -o magisk.apk https://github.com/topjohnwu/Magisk/releases/download/v26.1/Magisk-v26.1.apk
+          unzip -q magisk.apk
+          cp lib/x86_64/libmagiskboot.so ./magiskboot
           chmod +x magiskboot
-          file magiskboot
-          ls -lh magiskboot
 
           ./magiskboot unpack boot_stock.img
 
-          COMPILED_IMAGE=$(find ../android-kernel/out -type f \( -name "Image.gz-dtb" -o -name "Image.gz" -o -name "Image" \) | head -n 1)
+          COMPILED_IMAGE=$(find ../android-kernel/out -name "Image" -type f | head -n 1)
           echo "Kernel compilado encontrado em: $COMPILED_IMAGE"
-          cp "$COMPILED_IMAGE" kernel
-
-          ./magiskboot repack boot_stock.img boot_finished.img
-          if [ ! -s "boot_finished.img" ]; then
-              echo "ERRO: boot_finished.img nao foi gerado corretamente."
+          if [ -z "$COMPILED_IMAGE" ] || [ ! -s "$COMPILED_IMAGE" ]; then
+              echo "ERRO: Imagem compilada nao encontrada."
               exit 1
           fi
 
-          cp boot_finished.img ../boot_finished.img
-          ls -lh ../boot_finished.img
-          cd ..
+          KERNEL_FMT=$(file kernel | grep -o -E 'LZ4|gzip|raw' || echo "raw")
+          echo "Formato detectado do kernel original: $KERNEL_FMT"
 
-      - name: Enviar Artefato (boot.img Final com KernelSU Next)
+          if [[ "$KERNEL_FMT" == *"LZ4"* ]]; then
+             lz4 -c -12 "$COMPILED_IMAGE" > kernel
+          elif [[ "$KERNEL_FMT" == *"gzip"* ]]; then
+             gzip -c -9 "$COMPILED_IMAGE" > kernel
+          else
+             cp "$COMPILED_IMAGE" kernel
+          fi
+
+          ./magiskboot repack boot_stock.img boot_finished.img
+          if [ ! -s "boot_finished.img" ]; then
+              echo "ERRO: boot_finished.img nao foi gerado."
+              exit 1
+          fi
+          cp boot_finished.img ../boot_finished.img
+
+      - name: Anexar Artefato (boot.img Final Compilado)
         uses: actions/upload-artifact@v4
         with:
-          name: KernelSU_Next_Edge50Fusion_tecnico-root-v1
+          name: KernelSU_Next_Moto_Edge_50_Fusion_Compiled
           path: boot_finished.img
           
