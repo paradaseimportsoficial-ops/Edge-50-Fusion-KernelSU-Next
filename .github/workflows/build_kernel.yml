@@ -16,9 +16,9 @@ jobs:
           sudo apt-get install -y build-essential bc bison flex libssl-dev libelf-dev python3-pip lz4 pigz git ccache libncurses5-dev lld clang gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu gcc-arm-linux-gnueabi binutils-arm-linux-gnueabi curl cpio unzip file
           pip3 install gdown
 
-      - name: Baixar Fonte do Kernel MediaTek da Motorola (Edge 50 Fusion)
+      - name: Baixar Fonte do Kernel Qualcomm Snapdragon da Motorola
         run: |
-          git clone https://github.com/MotorolaMobilityLLC/kernel-mtk.git --depth=1 android-kernel
+          git clone https://github.com/MotorolaMobilityLLC/kernel-msm.git --depth=1 android-kernel
 
       - name: Integrar KernelSU Next no código-fonte
         run: |
@@ -44,7 +44,14 @@ jobs:
           rm -rf out
           touch .scmversion
 
-          make O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- defconfig || true
+          DEFCONFIG_FOUND=$(find arch/arm64/configs -maxdepth 2 -type f \( -iname "*sm7435*" -o -iname "*cusco*" -o -iname "*moto*" -o -iname "*vendor*" \) | head -n 1)
+          if [ -n "$DEFCONFIG_FOUND" ]; then
+              DEFCONFIG_NAME=$(basename "$DEFCONFIG_FOUND")
+              echo "Usando defconfig: $DEFCONFIG_NAME"
+              make O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- "$DEFCONFIG_NAME" || true
+          else
+              make O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- defconfig || true
+          fi
 
           if [ -f "out/.config" ]; then
               scripts/config --file out/.config --set-str CONFIG_LOCALVERSION "-tecnico-root-v1"
@@ -53,7 +60,8 @@ jobs:
 
           export HOSTCFLAGS="-Wno-error=strict-prototypes -Wno-error=implicit-int -Wno-error=implicit-function-declaration -Wno-error=return-type"
           make -k -j$(nproc --all) O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- KCFLAGS="-w" WERROR=0 Image.gz-dtb || \
-          make -k -j$(nproc --all) O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- KCFLAGS="-w" WERROR=0 Image.gz
+          make -k -j$(nproc --all) O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- KCFLAGS="-w" WERROR=0 Image.gz || \
+          make -k -j$(nproc --all) O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- KCFLAGS="-w" WERROR=0 Image
 
       - name: Processar e Reempacotar com Boot.img Original
         run: |
