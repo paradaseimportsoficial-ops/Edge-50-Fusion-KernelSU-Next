@@ -55,7 +55,9 @@ jobs:
 
           if [ -f "out/.config" ]; then
               scripts/config --file out/.config --set-str CONFIG_LOCALVERSION "-tecnico-root-v1"
+              scripts/config --file out/.config --disable CONFIG_POWER_RESET_MSM
               make O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+              scripts/config --file out/.config --disable CONFIG_POWER_RESET_MSM
           fi
 
           export HOSTCFLAGS="-Wno-error=strict-prototypes -Wno-error=implicit-int -Wno-error=implicit-function-declaration -Wno-error=return-type"
@@ -68,12 +70,10 @@ jobs:
           mkdir -p work
           cd work
 
-          # 1. Baixar o boot.img oficial da versão final 7
           FILE_ID="1EmqBaLng6Cxho91VAA9oLRAlc_J9YkHz"
           gdown "https://drive.google.com/uc?id=${FILE_ID}" -O boot_stock.img
           ls -lh boot_stock.img
 
-          # 2. Baixar APK oficial do Magisk para extrair libmagiskboot.so (x86_64)
           MAGISK_APK_URL=$(curl -s https://api.github.com/repos/topjohnwu/Magisk/releases/latest | grep "browser_download_url" | grep "\.apk" | cut -d '"' -f 4 | head -n 1)
           echo "Baixando Magisk APK: $MAGISK_APK_URL"
           curl -fSL -o magisk.apk "$MAGISK_APK_URL"
@@ -83,16 +83,13 @@ jobs:
           file magiskboot
           ls -lh magiskboot
 
-          # 3. Desempacotar o boot original
           ./magiskboot unpack boot_stock.img
 
-          # 4. Localizar a imagem compilada do kernel
           COMPILED_IMAGE=$(find ../android-kernel/out -name "Image.gz-dtb" -o -name "Image.gz" -o -name "Image" | head -n 1)
           echo "Kernel compilado encontrado em: $COMPILED_IMAGE"
 
           cp "$COMPILED_IMAGE" kernel
 
-          # 5. Reempacotar o boot.img final com o KernelSU Next embutido
           ./magiskboot repack boot_stock.img boot_finished.img
           cp boot_finished.img ../boot_finished.img
           ls -lh ../boot_finished.img
