@@ -55,15 +55,25 @@ jobs:
 
           if [ -f "out/.config" ]; then
               scripts/config --file out/.config --set-str CONFIG_LOCALVERSION "-tecnico-root-v1"
+              scripts/config --file out/.config --disable CONFIG_PINCTRL_MT8183
+              scripts/config --file out/.config --disable CONFIG_PINCTRL_MT8192
+              scripts/config --file out/.config --disable CONFIG_PINCTRL_MT8516
               scripts/config --file out/.config --disable CONFIG_POWER_RESET_MSM
               make O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
               scripts/config --file out/.config --disable CONFIG_POWER_RESET_MSM
           fi
 
           export HOSTCFLAGS="-Wno-error=strict-prototypes -Wno-error=implicit-int -Wno-error=implicit-function-declaration -Wno-error=return-type"
-          make -k -j$(nproc --all) O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- KCFLAGS="-w" WERROR=0 Image.gz-dtb || \
-          make -k -j$(nproc --all) O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- KCFLAGS="-w" WERROR=0 Image.gz || \
-          make -k -j$(nproc --all) O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- KCFLAGS="-w" WERROR=0 Image
+          make -j$(nproc --all) O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- KCFLAGS="-w" WERROR=0 Image.gz-dtb || \
+          make -j$(nproc --all) O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- KCFLAGS="-w" WERROR=0 Image.gz || \
+          make -j$(nproc --all) O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- KCFLAGS="-w" WERROR=0 Image
+
+          COMPILED_IMAGE=$(find out -type f \( -name "Image.gz-dtb" -o -name "Image.gz" -o -name "Image" \) | head -n 1)
+          if [ -z "$COMPILED_IMAGE" ] || [ ! -s "$COMPILED_IMAGE" ]; then
+              echo "ERRO: Nenhuma imagem compilada valida foi gerada."
+              exit 1
+          fi
+          echo "Imagem compilada valida: $COMPILED_IMAGE ($(stat -c%s "$COMPILED_IMAGE") bytes)"
 
       - name: Processar e Reempacotar com Boot.img Original
         run: |
@@ -72,6 +82,10 @@ jobs:
 
           FILE_ID="1EmqBaLng6Cxho91VAA9oLRAlc_J9YkHz"
           gdown "https://drive.google.com/uc?id=${FILE_ID}" -O boot_stock.img
+          if [ ! -s "boot_stock.img" ]; then
+              echo "ERRO: boot_stock.img nao foi baixado ou esta vazio."
+              exit 1
+          fi
           ls -lh boot_stock.img
 
           MAGISK_APK_URL=$(curl -s https://api.github.com/repos/topjohnwu/Magisk/releases/latest | grep "browser_download_url" | grep "\.apk" | cut -d '"' -f 4 | head -n 1)
@@ -85,12 +99,16 @@ jobs:
 
           ./magiskboot unpack boot_stock.img
 
-          COMPILED_IMAGE=$(find ../android-kernel/out -name "Image.gz-dtb" -o -name "Image.gz" -o -name "Image" | head -n 1)
+          COMPILED_IMAGE=$(find ../android-kernel/out -type f \( -name "Image.gz-dtb" -o -name "Image.gz" -o -name "Image" \) | head -n 1)
           echo "Kernel compilado encontrado em: $COMPILED_IMAGE"
-
           cp "$COMPILED_IMAGE" kernel
 
           ./magiskboot repack boot_stock.img boot_finished.img
+          if [ ! -s "boot_finished.img" ]; then
+              echo "ERRO: boot_finished.img nao foi gerado corretamente."
+              exit 1
+          fi
+
           cp boot_finished.img ../boot_finished.img
           ls -lh ../boot_finished.img
           cd ..
